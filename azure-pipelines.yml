@@ -1,0 +1,67 @@
+trigger:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  pythonVersion: '3.10'
+  buildArtifact: 'drop'
+
+stages:
+- stage: Build
+  displayName: 'Build stage'
+  jobs:
+  - job: BuildJob
+    displayName: 'Install & Package'
+    steps:
+    - task: UsePythonVersion@0
+      inputs:
+        versionSpec: '$(pythonVersion)'
+      displayName: 'Use Python $(pythonVersion)'
+
+    - script: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+      displayName: 'Install dependencies'
+
+    - script: |
+        echo "No tests yet"
+      displayName: 'Run tests'
+
+    - task: ArchiveFiles@2
+      inputs:
+        rootFolderOrFile: '$(System.DefaultWorkingDirectory)'
+        includeRootFolder: false
+        archiveType: 'zip'
+        archiveFile: '$(Build.ArtifactStagingDirectory)/$(buildArtifact).zip'
+        replaceExistingArchive: true
+      displayName: 'Archive files'
+
+    - publish: '$(Build.ArtifactStagingDirectory)/$(buildArtifact).zip'
+      artifact: '$(buildArtifact)'
+
+- stage: Deploy
+  displayName: 'Deploy to App Service'
+  dependsOn: Build
+  jobs:
+  - deployment: DeployWeb
+    displayName: 'Deploy Python app to Azure App Service'
+    environment: 'python-web-app'
+    pool:
+      vmImage: 'ubuntu-latest'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: current
+            artifact: '$(buildArtifact)'
+
+          - task: AzureWebApp@1
+            inputs:
+              azureSubscription: 'AzureConnection'
+              appType: 'webAppLinux'
+              appName: 'your-app-service-name'
+              package: '$(Pipeline.Workspace)/$(buildArtifact)/$(buildArtifact).zip'
